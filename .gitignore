@@ -1,2 +1,4 @@
 # pdfs
 *.pdf
+# except report.pdf
+!report.pdf
