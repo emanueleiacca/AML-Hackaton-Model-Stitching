@@ -1,0 +1,1751 @@
+The Thirty-Ninth AAAI Conference on Artificial Intelligence (AAAI-25)
+
+Expanding the Scope of Negatives: Boosting Image-Text Matching with Negatives
+Distribution Guided Learning
+Zhao Zhou1,2 , Weizhong Zhang1,3∗ , Xiangcheng Du1 , Yingbin Zheng4 , Cheng Jin1,2 *
+1
+
+Fudan University, Shanghai, China
+Innovation Center of Calligraphy and Painting Creation Technology, MCT, China
+3
+Shanghai Collaborative Innovation Center of Intelligent Visual Computing, China
+4
+Videt Lab, Shanghai, China
+{zzhou21, xcdu22}@m.fudan.edu.cn, zyb@videt.cn, {weizhongzhang, jc}@fudan.edu.cn
+2
+
+Abstract
+
+employ triplet loss (Frome et al. 2013) as their primary optimization objective. In image-to-text matching, a triplet includes an anchor query image, a positive text, and a negative
+text, forming both positive and negative pairs. Triplet loss
+aims to minimize the distance between anchor and positive
+samples while maximizing the distance between anchor and
+negative samples in a common embedding space. Therefore,
+selecting negative samples is crucial for the effectiveness of
+triplet loss, attracting significant research attention.
+Inspired by the large margin learning theory in machine
+learning (Cortes and Vapnik 1995), the hard negative mining strategy was introduced in VSE++ (Faghri et al. 2018).
+This strategy compels the model to focus on negative samples that are close to positive samples, refining the decision
+boundary to achieve a larger margin over these instances.
+It is important to note that image-text matching falls under
+the category of contrastive learning. In contrast to traditional
+large margin learning, this hard negative mining strategy
+offers a distinct advantage: it significantly enhances training efficiency by discarding numerous redundant and easily
+distinguishable positive-negative sample pairs. Some works
+(Xuan et al. 2020; Yu et al. 2018) point out that inaccurate
+hardest negative selection may cause distance metrics to fail
+in capturing semantics, leading to poor local minima. To address this issue, recent methods (Chen, Deng, and Luo 2020;
+Zhang et al. 2022; Li et al. 2023a) are proposed to refine the
+selection of the hardest negative samples or to generate the
+truly hardest negatives.
+Despite the promising results reported in the existing
+studies (Zhang et al. 2022; Li et al. 2023a), we argue that
+solely considering hardest negatives can lead to a serious
+limitation. Firstly, compared to the hardest negative in each
+minibatch, there is a much larger number of other negative samples that offer a range of semantic differences not
+present in the hardest negatives. These differences are crucial for improving the ability of model to perform finegrained matching of images and text. Secondly, selecting the
+hardest negative is unstable, as it requires the model to identify the most similar negative sample among all options. This
+process is particularly prone to errors in the early stages of
+training, which can adversely impact model optimization.
+We demonstrate the importance of other negative samples
+for model training from three perspectives: case analysis,
+
+Image-text matching is a crucial task that bridges visual
+and linguistic modalities. Recent research typically formulates it into the problem of maximizing the margin with the
+truly hardest negatives to enhance the learning efficiency and
+avoid the poor local optima. We argue that such formulation
+can lead to a serious limitation, i.e., under this formulation,
+conventional trainers would confine their horizon within the
+hardest negative examples, while other negative examples offer a range of semantic differences not present in the hardest
+negatives. In this paper, we propose an efficient negative distribution guided training framework for image-text matching
+to unlock the substantial promotion space left by the above
+limitation. Rather than simply incorporating additional negative examples into the training objective, which could diminish both the leading role of the hardest negatives in training and the effect of a large margin learning in producing
+a robust matching model, our central idea is to supply the
+objective with distributional information on the entire set of
+negative examples. To be precise, we first construct the sample similarity matrix based on several pretrained models to
+extract the distributional information of the entire negative
+sample dataset. Then we encode it into a margin regularization module to smooth the similarities differences of all negatives. This enhancement facilitates the capture of fine-grained
+semantic differences and guides the main learning process by
+maximizing the margin with hard negative examples. Furthermore, we propose a hardest negative rectification module to
+address the instability in hardest negative selection based on
+predicted similarity and to correct erroneous hardest negatives. We evaluate our method in combination with several
+state-of-the-art image-text matching methods, and our quantitative and qualitative experiments demonstrate its significant
+generalizability and effectiveness.
+
+Introduction
+Image-text matching is a key task in multi-modal learning,
+aiming to determine the relationship between visual content and textual descriptions. This task is fundamental to
+numerous applications, including multimedia retrieval (Li
+et al. 2022c) and visual question answering (Anderson et al.
+2018). Current image-text matching methods commonly
+* Corresponding author.
+Copyright © 2025, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+
+10887
+
+100
+Hardest Negative
+
+50
+0
+Fragments
+Positive Text: Young child and woman with glasses playing with toys on a red rug. -50
+Hardest Negative Text: A woman is helping a child build using toys.
+-100
+Other Negative Text:
+An older woman and a young child in a pink shirt playing with multicolored blocks.
+-150
+A woman and three children are playing with various toys from a toy box.
+A middle-aged woman wearing a white shirt talking as she shows a small child in -200
+yellow how the Legos work .
+
+(a)
+
+-100
+
+-50
+
+0
+
+(b)
+
+Query Image
+Positive Text
+Negative Text
+50
+100
+
+1
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0
+-0.2
+
+P(x <= s) = α
+0.86
+
+Samples Ratio(α)
+
+150
+
+0.66
+
+Image
+Text
+0.1
+0.3
+0.5
+0.7
+Cosine Similarity (s)
+
+0.9
+
+(c)
+
+Figure 1: Illustration of our motivation. Negative examples provide a range of semantic differences not captured by the hardest
+negatives. (a) Matching of an image with corresponding positive and negative texts, where colorful boxes highlight fine-grained
+correspondences and gray boxes indicate mismatches. (b) t-SNE projections showing features extracted by the trained model.
+(c) Quantile plot comparing similarity among the hardest negative samples to that of the top-30 most similar negative samples.
+feature visualization and statistical analysis. Specifically, as
+illustrated in Figure 1(a), the hardest negative may mismatch
+with fragments like “red rug” compared to the positive text,
+while other negatives offer finer-grained distinctions, such
+as color or numerical features. This helps model understand
+the fine-grained characteristics of fragments. Furthermore,
+Figure 1(b) visualizes the image and text embeddings with
+t-SNE (Van der Maaten and Hinton 2008), which indicates
+that the differences between negative samples are significant
+even among those close to the query. It reveals that while
+many negative texts have similar semantics to the query, they
+are dispersed, highlighting semantic variations among the
+negatives. Figure 1(c) presents the quantile function of similarity scores between the hardest negative samples and the
+top-30 most similar negative samples. The similarity scores
+are generally low, with 86% (resp. 66%) of the top-30 most
+similar negative image (resp. text) samples falling below 0.5,
+highlighting other negative examples offer a range of semantic differences not present in the hardest negatives.
+To unlock the substantial promotion space left by the
+limiatation above, in this paper, we propose a novel Negatives Distribution Guided Learning (NDGL) framework for
+image-text matching. Note that simply incorporating additional negative examples into the training objective can diminish both the leading role of the hardest negatives in training and the effect of a large margin learning in producing a
+robust matching model. To leverage the diverse semantic differences provided by all negative samples to enhance model
+training, rather than strictly maximizing margins for those
+negative examples, our key idea is to adopt a soft supervision for training, i.e., guide the model so that its similarity
+score distribution over negative examples closely aligns with
+a reference model’s distribution. Specifically, we generate a
+target similarity matrix for all samples by integrating outputs
+from multiple base models trained with hard negative mining strategy. Considering this matrix as an instantiation of
+the target distribution, we implement a margin regularization
+module designed to smooth the similarity differences among
+all negatives according to the target distribution. Furthermore, a hardest negative rectification module is proposed to
+
+address the instability in hardest negative selection based on
+predicted similarity and to correct erroneous hardest negatives. Based on these designs, in each training iteration, we
+can fully utilize the semantic information from all negatives
+from the distributional guidance, and maintain the leading
+role of the hardest negatives to aid in training a robust model.
+It is worth noting that our framework is general and can be
+directly applied to image-text matching methods without requiring modifications to network structures.
+The main contributions can be summarized as follows:
+• We demoonstrate that other negative examples offer a
+range of semantic differences not captured by the hardest
+negatives via three perspectives: case analysis, feature visualization and statistical analysis. This analysis enables
+us to identify the deficiencies of previous methods and
+the substantial promotion space that can be unlocked.
+• We propose a novel negatives distribution guided imagetext semantic learning framework that leverages the diverse semantic differences presented by all negative samples to enhance model training. This framework not
+only preserves the benefits of large-margin learning but
+also unlocks substantial promotion space left by relying
+solely on the hardest negatives.
+• We apply NDGL to five state-of-the-art baseline models. Extensive quantitative and qualitative experiments
+demonstrate the strong generalizability and effectiveness
+of our approach.
+
+Related Work
+Image-Text Matching Methods. Recently, image-text
+matching has seen significant advancements, primarily following two research directions: global-level matching and
+local-level matching. The global-level matching focuses
+on understanding the holistic semantic content of images
+and texts, assessing the degree of semantic similarity between them. For instance, GPO (Chen et al. 2021) employs a Generalized Pooling Operator to adaptively select
+the optimal pooling strategy for different features, while
+10888
+
+Training Process
+
+HREM (Fu et al. 2023) explicitly captures both fragmentlevel and instance-level relations to learn discriminative and
+robust cross-modal embeddings. Unlike global-level methods, local-level matching methods focus on fine-grained
+relationships between specific visual and textual elements
+within images and texts. For instance, DivE (Kim, Kim,
+and Kwak 2023) employs a slot attention mechanism to
+capture diverse semantics of the input and introduces a
+new similarity function called smooth-chamfer similarity
+to avoid sparse supervision and set collapsing. Similarly,
+CHAN (Pan, Wu, and Zhang 2023) focuses on the most relevant region-word pairs, disregarding all other alignments
+as redundant or irrelevant. In this study, to comprehensively
+evaluate the effectiveness of proposed framework, we have
+chosen five global-level and local-level matching methods
+as baselines for comparison.
+Negative Samples Mining. The selection of negative samples is critical for training robust image-text matching models. Early approaches (Frome et al. 2013) employed all negative samples using triplet loss for training. VSE++ (Faghri
+et al. 2018) introduced triplet loss combined with an online hard negative mining strategy, which eliminates redundant, easily distinguishable samples and helps the model
+learn more distinct representations. Subsequently, the CFM
+framework (Wei et al. 2022) proposed synthesizing counterfactual samples for more effective image-text matching.
+LSEH (Gong and Cosma 2023) introduced a semanticallyenhanced hard negatives loss function that dynamically
+modifies the learning objective based on the semantic similarities between unrelated image-description pairs. In contrast to methods that focus on selecting the hardest negative samples to learn more distinct feature representations,
+our approach leverages the diverse semantic differences presented by all negative samples to enhance model training.
+Distillation Learning. Distillation Learning is widely used
+for model speedup and lightweight optimization (Jiao et al.
+2020; Wu et al. 2022). Several methods (Abbasi Koohpayegani, Tejankar, and Pirsiavash 2020; Tejankar et al.
+2021) propose utilizing complex models as teachers to guide
+student models by minimizing the Kullback-Leibler (KL)
+divergence of their predictions. While our framework is
+similar, these methods focus on single-modality distillation,
+whereas our method targets cross-modality distillation. Furthermore, instead of using similarity distributions, we employ margin regularization to constrain predictions. The benefits of these regularization methods will be analyzed in the
+following section.
+
+Prepare Target Similarity Distribution
+Trained with hardest negatives
+
+Target Margin
+
+Trained with Initialization 1
+Two men,
+An
+A man is
+onecheste
+adventuro
+standing...
+d...u ..
+
+Trained with Initialization K
+
+Image-text Pair
+Training Network
+
+Two men,
+An
+A man is
+onecheste
+adventuro
+standing...
+d...u ...
+
+Text Encoder
+(BERT / BiGRU)
+
+Image-text Pair
+
+Network
+
+NDGL
+
+Similarity
+Encoder
+
+Image Encoder
+(BUTD/CNN...)
+
+Predict Margin
+
+Negatives Distribution Guided Learning (NDGL)
+Target Margin Distribution
+N
+N
+Optimal
+A
+A N
+N
+-0.5 -0.2 0.0 0.3 Regulate
+0.5
+Hardest negative sample
+N selected by target
+A Anchor
+Predict Margin Distribution
+-0.5
+
+-0.2
+
+0.0
+
+0.3
+
+negative sample
+N Hardest
+selected by predict
+
+0.5
+
+Margin Regulation
+
+Distance
+
+Hardest Negative Rectification
+
+Figure 2: The pipeline of negatives distribution learning.
+
+Preliminaries
+Triplet loss is a fundamental concept in the domain of
+image-text matching. The core idea is to ensure that the distance between a positive pair (an image and its corresponding text) is smaller than the distance between a negative pair
+(an image and a non-matching text) by a fixed margin. This
+approach facilitates effective retrieval and matching between
+the two modalities. Formally, given a training mini-batch
+containing a set of positive pairs, the standard triplet loss
+is defined as follows:
+
+Ltriplet =
+
+X  X
+(i,t)∈P
+
+[α − S(i, t) + S(i, t)]+
+
+t∈T /t
+
++
+
+X
+
+
+[α − S(i, t) + S(i, t)]+ .
+
+(1)
+
+i∈I/i
+
+Here, α denotes the margin of the triplet loss, and [x]+ ≡
+max(x, 0). The sets I, T , and P represent the images, texts,
+and positive pairs within the mini-batch, respectively. The
+variables i and t are the anchor for the image and text terms.
+The pair (i, t) indicates a positive pair, while (i, t) and (i, t)
+indicate negative pairs in the mini-batch. The similarity S is
+used to measure the distance between the image and text.
+To avoid redundant and easily distinguishable samples,
+the online hard negative mining strategy (Faghri et al.
+2018) focuses on distinguishing between positive pairs
+and the most confusing negative pairs. Specifically, for a
+positive pair (i, t) in a mini-batch, the hard negatives t̂
+and î are defined as t̂ = arg maxc∈T /t S(i, c) and î =
+arg maxc∈I/i S(c, t), respectively. The resulting triplet loss
+is then defined as:
+
+Method
+In this section, we formally introduce our framework for
+image-text matching. We begin by discussing the standard
+triplet loss and hardest negative mining techniques used in
+prior work. Next, we present the pipeline of our framework
+and introduce the margin regularization and hardest negative rectification modules. Finally, we discuss the effect of
+the proposed framework.
+10889
+
+RSUM
+
+525
+520
+
+527.7
+
+523.3
+522.2
+
+519.3
+
+526.8
+525.2
+520.1
+
+CHAN
+
+GPO
+
+With NDGL
+
+524.9
+524.2
+517.4
+
+513.8
+
+515
+510
+
+Ensemble
+
+ESA
+
+Image-to-Text
+
+250
+
+2500
+
+with NDGL
+
+200
+
+Number of samples
+
+530
+
+Single
+
+Number of samples
+
+533.8
+
+535
+
+w/o NDGL
+
+150
+100
+50
+
+HREM
+
+0
+-0.09 -0.05 -0.01 0.03 0.07 0.11 0.15 0.19
+
+Margin
+
+(b)
+
+(a)
+
+Text-to-Image
+with NDGL
+
+2000
+
+w/o NDGL
+
+1500
+1000
+500
+
+0
+-0.12 -0.06 0.00 0.06 0.12 0.18 0.24 0.30 0.36
+
+Margin
+
+Figure 3: (a) Image-text retrieval performance of recent models, their ensemble results, and their improvement with the
+NDGL on the Flickr30K dataset. (b) The margin distribution changes when applying NDGL.
+
+Lonline =
+
+X 
+
+samples. Formally, given the predicted similarities S and the
+target similarities Ŝ, the loss is defined as follows:
+X X
+KL(S(i, t) − S(i, t) k Ŝ(i, t) − Ŝ(i, t))
+LMR =
+
+[α − S(i, t) + S(i, t̂)]+
+
+(i,t)∈P
+
+(2)
+
+(i,t)∈P
+
+
+
++ [α − S(i, t) + S(î, t)]+ .
+
++
+
+Negatives Distribution Guided Learning
+
+
+KL(S(i, t) − S(i, t) k Ŝ(i, t) − Ŝ(i, t)) .
+
+(4)
+Here, KL denotes the Kullback-Leibler divergence.
+Hardest Negative Rectification. According to large margin
+learning theory, the hardest negatives are crucial for training a robust model. Due to the instability of hardest negative
+selection based on predicted similarity during training, we
+believe that the hardest negatives selected based on reference similarity are closer to the true hardest negative samples. Based on this, we propose a hardest negative rectification module that focuses on ranking two hardest negatives
+from different distributions and to correct erroneous hardest
+negatives. Formally, for a positive pair (i, t) in a mini-batch,
+the hard negatives from target similarity t̃ and ĩ are defined
+as t̃ = arg maxc∈T /t Ŝ(i, c) and ĩ = arg maxc∈I/i Ŝ(c, t),
+respectively. The main idea is, for instance in image-to-text
+matching, to ensure that S(i, t̃) is not lower than S(i, t̂). The
+loss is defined as follows:
+X 
+LHNR =
+[γ − S(i, t̃) + S(i, t̂)]+
+(i,t)∈P
+
+(5)
+
++ [γ − S(ĩ, t) + S(î, t)]+ .
+
+Here, γ denotes the margin of the loss. Since the distance
+between two challenging negatives is small, we set the margin γ to 0.01. When the hardest negative is the same for two
+similarity scores, we set γ to 0.0.
+Training Objective. Following the baseline methods (Pan,
+Wu, and Zhang 2023; Chen et al. 2021), we implement the
+triplet loss as described in Equation 2, supplemented by the
+losses in Equations 4 and 5. The final loss function is formulated as follows:
+L = Lonline + λ1 LMR + λ2 LHNR ,
+(6)
+where λ1 and λ2 are the coefficient balancing the losses.
+
+K
+
+1 X
+Sk (i, t).
+K
+
+t∈T /t
+
+i∈I/i
+
+To avoid the limitations of focusing solely on the hardest
+negative samples, we propose a novel image-text matching
+framework called Negative Distribution Guided Learning
+(NDGL). Our key idea is to leverage diverse semantic differences provided by all negative samples while maintaining the leading role of the hardest negatives and the benefits of large-margin learning during training. The pipeline of
+NDGL as illustrated in Figure 2.
+Preparation of Target Similarity Distribution. Obtaining
+fine-grained similarity labels from only positive pair labels
+is difficult. We observe that the similarity distribution of all
+samples predicted by the ensemble outputs outperforms that
+of the individual model, even when both use the same underlying model structure. Thus, we use the reference similarity
+distribution output by model ensembling as the target distribution for soft supervision, guiding the learning of semantic
+differences among all samples. Specifically, we aggregate
+the similarity outputs from K models, each trained with a
+hard negative mining strategy and different initializations,
+across the entire training dataset to generate a target similarity matrix for extracting distributional information. This
+matrix, denoted as Ŝ, is formatted as follows:
+Ŝ(i, t) =
+
+X
+
+(3)
+
+k
+
+Here, Sk denote the k-th model outputs similarity. This matrix is then transformed into a target margin distribution to
+regularize the predicted similarity differences in the margin
+regularization module and to guide the learning process for
+selecting truly negative samples in the hardest negative rectification modules.
+Margin Regularization. To learn the semantic differences
+between negative pairs and ensure that the similarity difference distribution predicted by the model closely aligns with
+the reference model’s distribution, we propose a margin regularization module. This module uses the target distribution
+to regularize the predicted semantic differences among all
+
+Effect of Negatives Distribution Learning
+Advantages of NDGL. The proposed NDGL framework
+is arguably the simplest approach to enhancing the perfor10890
+
+Data Split
+Eval Task
+Method
+
+MS-COCO
+R @1
+
+IMG → TEXT
+R @5
+R @10
+
+Flickr30K
+
+TEXT → IMG
+R @1
+R @5
+R @10
+
+RSUM
+
+IMG → TEXT
+R @1
+R @5
+R @10
+
+TEXT → IMG
+R @1
+R @5
+R @10
+
+RSUM
+
+BUTD + BiGRU
+DivE
+79.9
+DivE+NDGL
+79.6
+ESA
+78.9
+ESA+NDGL
+80.4
+CHAN
+79.7
+CHAN+NDGL 81.5
+
+95.8
+96.0
+96.4
+96.5
+96.3
+97.0
+
+98.5
+98.7
+98.8
+98.8
+98.7
+98.9
+
+63.2
+64.0
+63.1
+63.5
+64.1
+66.5
+
+90.5
+91.2
+90.9
+91.2
+90.6
+92.1
+
+95.6
+96.3
+96.0
+96.2
+95.9
+96.7
+
+523.5
+525.9(+2.4)
+524.1
+526.5(+2.4)
+525.3
+532.7(+7.4)
+
+77.3
+79.2
+82.1
+83.2
+78.0
+83.7
+
+93.6
+94.8
+95.6
+96.1
+94.6
+95.8
+
+97.0
+97.3
+97.6
+98.2
+96.7
+98.2
+
+56.1
+60.8
+60.4
+62.7
+60.7
+64.8
+
+83.0
+86.0
+85.6
+86.8
+84.7
+88.6
+
+89.4
+91.3
+91.6
+92.2
+90.6
+93.1
+
+496.3
+509.4(+13.1)
+512.9
+519.2(+6.3)
+505.3
+524.2(+18.9)
+
+BUTD + BERT
+GPO
+79.2
+GPO+NDGL
+81.3
+ESA
+80.1
+ESA+NDGL
+81.2
+HREM
+81.5
+HREM+NDGL 82.3
+CHAN
+80.7
+CHAN+NDGL 83.3
+
+96.6
+96.6
+96.6
+97.0
+96.5
+97.0
+96.8
+97.2
+
+98.9
+98.8
+99.0
+98.9
+98.8
+99.0
+99.1
+99.2
+
+64.7
+65.9
+64.8
+65.8
+65.8
+66.4
+66.2
+68.5
+
+91.2
+92.0
+91.5
+92.0
+91.3
+91.8
+91.9
+93.0
+
+96.2
+96.6
+96.2
+96.4
+96.0
+96.4
+96.6
+97.1
+
+526.8
+531.2(+4.4)
+528.2
+531.4(+3.2)
+530.0
+533.0(+3.0)
+531.3
+538.3(+7.0)
+
+80.1
+84.0
+82.7
+85.0
+82.1
+84.4
+79.8
+84.8
+
+95.5
+96.2
+96.6
+96.4
+96.5
+96.7
+95.8
+97.0
+
+97.8
+98.5
+98.6
+98.3
+98.5
+98.6
+97.5
+98.5
+
+62.1
+64.2
+63.0
+65.5
+62.1
+64.4
+65.3
+69.0
+
+86.4
+87.6
+87.2
+88.6
+86.5
+88.1
+88.0
+90.2
+
+91.9
+92.9
+92.0
+93.0
+91.7
+92.5
+92.9
+94.3
+
+513.8
+523.3(+9.5)
+520.1
+526.8(+6.7)
+517.4
+524.9(+7.5)
+519.3
+533.8(+14.5)
+
+ResNeXt-101 + BERT
+GPO
+84.7
+GPO+NDGL
+85.5
+
+97.9
+98.0
+
+99.4
+99.5
+
+71.6
+72.9
+
+93.9
+94.2
+
+97.4
+97.6
+
+544.8
+547.7(+2.9)
+
+88.1
+87.9
+
+98.6
+99.1
+
+99.7
+99.7
+
+74.3
+74.7
+
+93.3
+93.8
+
+96.5
+97.1
+
+550.4
+552.3(+1.9)
+
+Table 1: Image-text retrieval results on MS-COCO 1K Test and Flickr30K datasets. The results for the original model are
+obtained from re-training using the code provided in the paper.
+
+Experiments
+
+mance of baseline models. It achieves this without modifying the network architecture or introducing additional
+parameters, while effectively avoiding poor local minima
+through the use of the hard negative mining strategy. Unlike previous methods that focus on identifying the hardest
+negative samples, our framework mines all negative semantic similarities to guide the model in understanding the finegrained correspondences between images and text. In contrast to methods that optimize using all negatives without
+accounting for their differences, our approach preserves the
+critical role of the hardest negatives while also helping the
+baseline model unlock the significant potential that is otherwise left. As shown in Figure 3(a), the performance of a
+single model trained with NDGL is comparable to, or even
+surpasses, that of the ensemble results, which are used as a
+reference distribution during the training process.
+
+Experimental Settings
+Datasets. We selected two widely-used datasets for our
+experimentation: Flickr30K (Young et al. 2014) and MSCOCO (Chen et al. 2015). The MS-COCO dataset comprises 123,287 images, each accompanied by 5 annotated
+captions. Our data partitioning adheres to established practices (Faghri et al. 2018), allocating 113,287 images for
+training, 5,000 for validation, and 5,000 for testing. We ensure robustness by reporting results averaged over 5 folds of
+1,000 test images and validated on the entire 5,000-image
+test set. The Flickr30K dataset comprises 31,783 images obtained from the Flickr platform, with each image meticulously paired with five corresponding captions. Within the
+Flickr30K dataset, 29,000 images are allocated for training,
+1,000 for testing, and 1,014 for validation purposes.
+Evaluation Metrics. Following traditional information retrieval standards, we assess performance using R@K, representing the proportion of correctly matched queries among
+the top-K retrieved instances. Higher R@K values indicate better performance. To provide a thorough evaluation of
+matching effectiveness and follow by baseline methods, we
+consolidate all recall values into RSUM, which accounts for
+both image-to-text and text-to-image matching directions.
+Implementation Details. To ensure a comprehensive evaluation, we maintain the network architectures and configurations of all baseline methods exactly as detailed in their
+respective papers. For each input image, we use bottom-up
+and top-down attention (BUTD) (Anderson et al. 2018) to
+extract top-K region-level features or ResNeXt (Mahajan
+et al. 2018) to obtain image features. For each input text, we
+use two formulations for text representation: bi-directional
+gated recurrent unit (BiGRU) or pre-trained BERT (Devlin
+
+Explanation of Results. The result of NDGL can be explained through the perspective of label smoothing (Szegedy
+et al. 2016), a technique commonly used to replace “hard labels” with smoothed labels, thereby improving performance
+across various tasks. Our framework can be viewed as a
+form of label smoothing, offering smooth semantic differences for sample pairs, and consequently achieving better
+performance than the “teacher” model. To further validate
+the regularizing effect of the NDGL method on the prediction results, we calculate the margin distribution for both the
+original model and the model trained with NDGL. As shown
+in Figure 3(b), the model trained with NDGL avoiding overfitting to noise or outliers and resulting in a more realistic
+distribution. This regularization enhances the robustness of
+predictions, allowing the model to fully leverage its potential
+and significantly improve overall performance.
+10891
+
+Data Split
+
+MS-COCO
+
+Flickr30K
+
+Eval Task
+Method
+
+IMG → TEXT
+R @1
+R @5
+R @10
+
+TEXT → IMG
+R @1
+R @5
+R @10
+
+RSUM
+
+IMG → TEXT
+R @1
+R @5
+R @10
+
+TEXT → IMG
+R @1
+R @5
+R @10
+
+BUTD + BiGRU
+CGMN (Cheng et al. 2022)
+NAAF† (Zhang et al. 2022)
+DivE (Kim, Kim, and Kwak 2023)
+HREM (Fu et al. 2023)
+ESA (Zhu et al. 2023)
+X-Dim (Zhang et al. 2023)
+NUIF (Zhang et al. 2024a)
+CHAN+NDGL
+
+RSUM
+
+76.8
+80.5
+79.8
+80.0
+79.6
+80.9
+79.9
+81.5
+
+95.4
+96.5
+96.2
+96.0
+96.5
+96.9
+96.7
+97.0
+
+98.3
+98.8
+98.6
+98.7
+98.7
+98.9
+99.0
+98.9
+
+63.8
+64.1
+63.6
+62.7
+63.5
+64.7
+63.9
+66.5
+
+90.7
+90.7
+90.7
+90.1
+90.9
+90.9
+90.4
+92.1
+
+95.7
+96.5
+95.7
+95.4
+96.1
+96.5
+95.8
+96.7
+
+520.7
+527.2
+524.6
+522.8
+525.3
+528.8
+525.7
+532.7
+
+77.9
+81.9
+77.8
+79.5
+82.6
+83.1
+81.8
+83.7
+
+93.8
+96.1
+94.0
+94.3
+95.9
+96.3
+95.7
+95.8
+
+96.8
+98.3
+97.5
+97.4
+98.1
+98.4
+98.0
+98.2
+
+59.9
+61.0
+57.5
+59.3
+61.1
+61.7
+59.0
+64.8
+
+85.1
+85.3
+84.0
+85.1
+85.9
+86.1
+83.9
+88.6
+
+90.6
+90.6
+90.0
+91.2
+91.1
+91.4
+89.9
+93.1
+
+504.1
+513.2
+500.8
+506.8
+514.7
+517.0
+508.3
+524.2
+
+BUTD + BERT
+VSRN++† (Li et al. 2022b)
+HREM (Fu et al. 2023)
+USER (Zhang et al. 2024b)
+DCIN (Li et al. 2023b)
+ESA (Zhu et al. 2023)
+X-Dim (Zhang et al. 2023)
+NUIF (Zhang et al. 2024a)
+CHAN+NDGL
+
+77.9
+81.1
+82.8
+80.9
+80.3
+82.2
+83.3
+83.3
+
+96.0
+96.6
+96.8
+96.5
+96.5
+97.2
+97.3
+97.2
+
+98.5
+98.9
+98.8
+98.8
+99.0
+99.1
+98.9
+99.2
+
+64.1
+66.1
+66.1
+65.1
+65.2
+66.9
+69.2
+68.5
+
+91.0
+91.6
+90.6
+91.5
+91.6
+92.0
+92.7
+93.0
+
+96.1
+96.5
+95.6
+96.3
+96.3
+96.6
+96.9
+97.1
+
+523.6
+530.7
+530.5
+529.1
+528.9
+534.0
+538.2
+538.3
+
+79.2
+83.3
+82.7
+83.0
+84.0
+83.1
+83.9
+84.8
+
+94.6
+96.0
+97.0
+96.4
+96.3
+96.3
+96.5
+97.0
+
+97.5
+98.1
+98.3
+98.6
+98.7
+98.4
+98.2
+98.5
+
+60.6
+63.5
+63.1
+63.3
+64.7
+61.7
+67.9
+69.0
+
+85.6
+87.1
+86.7
+87.8
+87.8
+86.1
+89.2
+90.2
+
+91.4
+92.4
+92.1
+92.4
+92.3
+91.4
+93.6
+94.3
+
+508.9
+520.4
+519.9
+521.5
+523.8
+517.0
+529.4
+533.8
+
+ResNeXt-101 + BERT
+DivE (Kim, Kim, and Kwak 2023)
+GPO+NDGL
+
+86.3
+85.5
+
+97.8
+98.0
+
+99.4
+99.5
+
+72.4
+72.9
+
+94.0
+94.2
+
+97.6
+97.6
+
+547.5
+547.7
+
+88.8
+87.9
+
+98.5
+99.1
+
+99.6
+99.7
+
+74.3
+74.7
+
+94.0
+93.8
+
+96.7
+97.1
+
+551.9
+552.3
+
+Table 2: Image-text retrieval results on MS-COCO 1K and Flickr30K. Bold and underlined texts denote the top and the runnerup, respectively. † Ensemble models of two hypotheses.
+et al. 2019). The default settings for λ1 and λ2 are 100.0 and
+0.5, respectively.
+
+Flickr30K datasets are reported in Table 2, showing that our
+method outperforms all image-text matching methods with
+the same image encoder and text encoder. Compared with
+other competitive methods, our method performs better with
+simpler network structures and smaller datasets. For example, using the BiGRU text encoder, our method achieves
+RSUM scores of 532.7 and 524.2 on the two datasets, respectively. In the smaller Flickr30K dataset, we achieve superior performance, establishing a significant gap over the
+second place with the BUTD image encoder. To fully validate the performance of NDGL with different image encoders, we choose GPO as a baseline and training with
+our framework, finding that the optimized results outperformed current state-of-the-art methods. This result demonstrates that our method significantly enhances performance,
+enabling the model to achieve a new state-of-the-art results.
+
+Main Results
+In this section, we empirically analyze the effectiveness
+and generalization ability of NDGL using several imagetext matching methods on the Flickr30K and MS-COCO
+datasets. We selected both local-level (CHAN, DivE) and
+global-level (ESA, GPO, HREM) matching methods, which
+have publicly available code, as the baselines. Table 1 reports the experimental results on both datasets, with all results generated by a single model to ensure a fair comparison. The findings demonstrate that the performance of
+both basic and state-of-the-art baseline methods is significantly improved by employing our framework, verifying the
+generality of NDGL across different methods. The locallevel methods show greater improvement when applying our
+framework compared to the global-level methods. Notably,
+the CHAN method exhibits substantial improvement with
+NDGL, especially on the Flickr30K dataset. The retrieval
+performance is significantly boosted from 519.3 to 533.8
+RSUM with the BERT text encoder, and there is a 18.9%
+improvement with the BiGRU text encoder, verifying the
+effectiveness of NDGL. Moreover, the improvement on the
+Flickr30K dataset is greater than on MS-COCO, indicating
+that fully utilizing negative samples is particularly important
+for training robust models on smaller datasets.
+
+Ablation Study
+Unless otherwise specified, all ablation experiments are conducted using CHAN with BUTD as image encoder and
+BERT as text encoder on Flickr30K dataset.
+Number of Ensemble Models. We further explore the criteria for determining the optimal number of models to use in
+the ensemble process. As shown in Table 3, using just one
+model to regularize the similarity distribution yields a significant improvement, achieving a 9.3% increase compared
+to the baseline. This underscores the importance of mining
+all negative samples during the training process. When two
+models are used for ensemble outputs, performance continues to improve, reaching an RSUM of 533.8. However, as
+the distribution of similarity changes only slightly with additional ensemble models, further increasing the number of
+
+Comparisons with the State-of-the-arts
+We apply our method to CHAN and GPO to compare with
+recent state-of-the-art methods, verifying the effectiveness
+of our framework. The comparisons on the MS-COCO and
+10892
+
+IMG → TEXT
+TEXT → IMG
+R @1 R @5 R @10 R @1 R @5 R @10 RSUM
+
+1
+2
+3
+4
+5
+
+83.4
+84.8
+84.4
+85.2
+85.7
+
+96.5
+97.0
+96.6
+96.8
+96.8
+
+98.1
+98.5
+99.0
+98.8
+98.6
+
+67.2
+69.0
+69.3
+69.2
+69.4
+
+89.6
+90.2
+90.6
+90.3
+90.4
+
+93.8
+94.3
+94.5
+94.3
+94.3
+
+528.6
+533.8
+534.3
+534.6
+535.3
+
+Table 3: NDGL with different ensemble number.
+Component
+
+IMG → TEXT
+TEXT → IMG
+R @1 R @5 R @10 R @1 R @5 R @10 RSUM
+
+Baseline
++ MR
++ HNR
+
+79.8 95.8
+84.1 96.5
+84.8 97.0
+
+97.5
+98.5
+98.5
+
+65.3 88.0
+68.7 90.0
+69.0 90.2
+
+92.9
+94.4
+94.3
+
+519.3
+532.2
+533.8
+
+MR→SR
+
+82.9 96.5
+
+97.9
+
+68.2 90.1
+
+94.0
+
+529.7
+
+Baseline
+
+Mining
+IMG → TEXT
+TEXT → IMG
+Method R@1 R@5 R@10 R@1 R@5 R@10 RSUM
+
+GPO
+GPO
+GPO
+GPO
+
+CFM
+LSEH
+NDGL
+
+81.7 95.4
+82.5 95.7
+82.4 96.0
+84.0 96.2
+
+97.6
+98.1
+98.6
+98.5
+
+61.4 85.9
+62.9 86.2
+63.7 87.1
+64.2 87.6
+
+91.5
+91.8
+92.5
+92.9
+
+513.5
+517.2
+520.3
+523.3
+
+VSRN
+VSRN
+VSRN
+VSRN
+VSRN
+
+AOQ
+CFM
+LSEH
+NDGL
+
+71.3 90.6
+72.8 91.8
+72.6 92.8
+73.0 92.8
+73.7 93.0
+
+96.0
+95.8
+96.0
+95.7
+96.8
+
+54.7 81.8
+55.3 82.2
+55.2 82.0
+55.8 81.9
+57.6 83.1
+
+88.2
+88.4
+89.2
+88.8
+89.9
+
+482.6
+486.3
+487.8
+488.0
+494.1
+
+Table 5: Compared with previous hard negative mining
+methods on Flickr30K.
+Image-to-Text
+280.3 280.4 280.6
+282
+279.1
+280
+278 275.9
+275.8 276.2
+276
+274.0
+273.1
+274
+272
+CHAN+NDGL
+270 268.2
+CHAN
+268
+266
+32
+64 128 256 512
+BatchSize
+
+RSUM
+
+Table 4: Ablation study of model components. SR denote
+the similarity regularization.
+
+models results in only marginal performance gains and a
+trend toward stabilization. Therefore, we selected an ensemble of two models as our default configuration.
+Model Components. We verify the efficacy of the proposed
+Margin Regularization (MR) and Hardest Negatives Rectification (HNR) in Table 4. Compared to the model without
+these modules, MR results in a 12.9% RSUM improvement.
+HNR further enhances performance, adding an additional
+1.6% to the RSUM. Furthermore, we compared our regularization method with direct similarity regularization (SR),
+which uses similarity measurements rather than differences.
+When MR is replaced with SR, the performance drops by
+approximately 4.1% RSUM but still shows a 10.4% increase
+compared to the baseline, indicating that regularization is
+crucial and that margin-level regularization is more suitable
+for image-text matching methods.
+
+Text-to-Image
+255
+252.3 253.5 253.5 254.8
+253 250.7
+251
+247.9 248.3
+249
+246.2
+247
+242.9
+245
+243
+241 238.0
+CHAN+NDGL
+239
+CHAN
+237
+235
+32
+64 128 256 512
+BatchSize
+
+RSUM
+
+#Ensemble
+
+Figure 4: RSUM changes with varying batch sizes.
+
+to perform poorly. Our NDGL framework enhances model
+performance by mining the hierarchical similarity of all negative samples across datasets, rather than restricting the selection to hardest negative samples within a mini-batch. This
+approach mitigates the dependency between hard negative
+mining and batch size. As shown in Figure 4, experimental results indicate that the model trained with NDGL using
+a small batch size achieves performance comparable to that
+of the baseline with a larger batch size. The improvements
+are particularly notable in text-to-image retrieval tasks. Additional discussion are provided in supplementary materials.
+
+Discussion
+Compare with Hard Negative Mining methods. We verify the efficacy of NDGL when applied with other hard
+negative mining methods using two baseline models, GPO
+and VSRN (Li et al. 2022b), on the Flickr30K dataset. As
+shown in Table 5, our framework achieves an 11.5% improvement in RSUM with the VSRN baseline, outperforming the second-best mining method by 6.1%, particularly in
+text-to-image retrieval performance. For the GPO baseline,
+we achieve an 8.8% improvement, surpassing other methods. Our method not only considers the hardest negative
+samples but also fully leverages the variations in similarity
+with different negatives. This highlights the importance of
+mining all samples to train a robust model.
+The Influence of Batch Size. The efficacy of hard negative mining strategies is highly dependent on batch size (He
+et al. 2020), as the quality of negative samples improves with
+the number of negative pairs. Consequently, when the batch
+size is small, methods based on hard negative mining tend
+
+Conclusions
+In this paper, we demonstrate that other negative examples offer a range of semantic differences not captured by
+the hardest negatives through case analysis, feature visualization, and statistical analysis, highlighting the importance
+of these negative samples for model training. We then introduce a novel framework for image-text matching, called
+negative distribution guided learning. Our framework leverages the semantic similarity differences of all negative samples to enhance model training. This approach not only preserves the benefits of large-margin learning but also exploits the substantial improvement potential left by relying
+solely on the hardest negatives. Extensive experiments on
+the Flickr30K and MS-COCO datasets validate the effectiveness of our proposed framework. As future work, we will
+explore the NDGL with the unified vision-language models
+such as (Radford et al. 2021; Li et al. 2022a; Wu et al. 2024).
+10893
+
+Acknowledgments
+
+He, K.; Fan, H.; Wu, Y.; Xie, S.; and Girshick, R. 2020.
+Momentum contrast for unsupervised visual representation
+learning. In IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 9729–9738.
+Jiao, X.; Yin, Y.; Shang, L.; Jiang, X.; Chen, X.; Li, L.;
+Wang, F.; and Liu, Q. 2020. TinyBERT: Distilling BERT for
+Natural Language Understanding. In Conference on Empirical Methods in Natural Language Processing, 4163–4174.
+Kim, D.; Kim, N.; and Kwak, S. 2023.
+Improving
+cross-modal retrieval with set of diverse embeddings. In
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, 23422–23431.
+Li, H.; Bin, Y.; Liao, J.; Yang, Y.; and Shen, H. T. 2023a.
+Your negative may not be true negative: Boosting image-text
+matching with false negative elimination. In ACM International Conference on Multimedia, 924–934.
+Li, J.; Li, D.; Xiong, C.; and Hoi, S. 2022a. Blip: Bootstrapping language-image pre-training for unified visionlanguage understanding and generation. In International
+Conference on Machine Learning, 12888–12900. PMLR.
+Li, K.; Zhang, Y.; Li, K.; Li, Y.; and Fu, Y. 2022b. Imagetext embedding learning via visual and textual semantic reasoning. IEEE Transactions on Pattern Analysis and Machine
+Intelligence, 45(1): 641–656.
+Li, P.; Xie, H.; Ge, J.; Zhang, L.; Min, S.; and Zhang, Y.
+2022c. Dual-stream knowledge-preserving hashing for unsupervised video retrieval. In European Conference on Computer Vision, 181–197. Springer.
+Li, W.; Su, X.; Song, D.; Wang, L.; Zhang, K.; and Liu,
+A.-A. 2023b. Towards Deconfounded Image-Text Matching with Causal Inference. In Proceedings of the 31st ACM
+International Conference on Multimedia, 6264–6273.
+Mahajan, D.; Girshick, R.; Ramanathan, V.; He, K.; Paluri,
+M.; Li, Y.; Bharambe, A.; and Van Der Maaten, L. 2018.
+Exploring the limits of weakly supervised pretraining. In
+European Conference on Computer Vision, 181–196.
+Pan, Z.; Wu, F.; and Zhang, B. 2023. Fine-grained imagetext matching by cross-modal hard aligning network. In
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, 19275–19284.
+Radford, A.; Kim, J. W.; Hallacy, C.; Ramesh, A.; Goh, G.;
+Agarwal, S.; Sastry, G.; Askell, A.; Mishkin, P.; Clark, J.;
+et al. 2021. Learning transferable visual models from natural language supervision. In International Conference on
+Machine Learning, 8748–8763. PMLR.
+Szegedy, C.; Vanhoucke, V.; Ioffe, S.; Shlens, J.; and Wojna,
+Z. 2016. Rethinking the inception architecture for computer
+vision. In IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 2818–2826.
+Tejankar, A.; Koohpayegani, S. A.; Pillai, V.; Favaro, P.; and
+Pirsiavash, H. 2021. Isd: Self-supervised learning by iterative similarity distillation. In IEEE/CVF International Conference on Computer Vision, 9609–9618.
+Van der Maaten, L.; and Hinton, G. 2008. Visualizing data
+using t-SNE. Journal of Machine Learning Research, 9(11).
+
+This work was supported by National Natural Science Foundation of China (62472097) and Shanxi Archives Research
+Program (2024-SX-008). The computations in this research
+were performed using the CFFF platform of Fudan University.
+
+References
+Abbasi Koohpayegani, S.; Tejankar, A.; and Pirsiavash, H.
+2020. Compress: Self-supervised learning by compressing
+representations. Advances in Neural Information Processing
+Systems, 33: 12980–12992.
+Anderson, P.; He, X.; Buehler, C.; Teney, D.; Johnson, M.;
+Gould, S.; and Zhang, L. 2018. Bottom-Up and Top-Down
+Attention for Image Captioning and Visual Question Answering. In IEEE/CVF Conference on Computer Vision and
+Pattern Recognition.
+Chen, J.; Hu, H.; Wu, H.; Jiang, Y.; and Wang, C. 2021.
+Learning the best pooling strategy for visual semantic embedding. In IEEE/CVF Conference on Computer Vision and
+Pattern Recognition, 15789–15798.
+Chen, T.; Deng, J.; and Luo, J. 2020. Adaptive offline quintuplet loss for image-text matching. In European Conference
+on Computer Vision, 549–565.
+Chen, X.; Fang, H.; Lin, T.-Y.; Vedantam, R.; Gupta, S.;
+Dollár, P.; and Zitnick, C. L. 2015. Microsoft coco captions: Data collection and evaluation server. arXiv preprint
+arXiv:1504.00325.
+Cheng, Y.; Zhu, X.; Qian, J.; Wen, F.; and Liu, P. 2022.
+Cross-modal graph matching network for image-text retrieval. ACM Transactions on Multimedia Computing, Communications, and Applications, 18(4): 1–23.
+Cortes, C.; and Vapnik, V. 1995. Support-vector networks.
+Machine learning, 20: 273–297.
+Devlin, J.; Chang, M.-W.; Lee, K.; and Toutanova, K. 2019.
+BERT: Pre-training of Deep Bidirectional Transformers for
+Language Understanding. In North American Chapter of
+the Association for Computational Linguistics: Human Language Technologies, 4171–4186.
+Faghri, F.; Fleet, D. J.; Kiros, J. R.; and Fidler, S. 2018.
+Vse++: Improving visual-semantic embeddings with hard
+negatives. In British Machine Vision Conference.
+Frome, A.; Corrado, G. S.; Shlens, J.; Bengio, S.; Dean, J.;
+Ranzato, M.; and Mikolov, T. 2013. Devise: A deep visualsemantic embedding model. Advances in Neural Information Processing Systems, 26.
+Fu, Z.; Mao, Z.; Song, Y.; and Zhang, Y. 2023. Learning semantic relationship among instances for image-text matching. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, 15159–15168.
+Gong, Y.; and Cosma, G. 2023. Improving visual-semantic
+embeddings by learning semantically-enhanced hard negatives for cross-modal information retrieval. Pattern Recognition, 137: 109272.
+10894
+
+Wei, H.; Wang, S.; Han, X.; Xue, Z.; Ma, B.; Wei, X.; and
+Wei, X. 2022. Synthesizing counterfactual samples for effective image-text matching. In ACM International Conference on Multimedia, 4355–4364.
+Wu, K.; Zhang, J.; Peng, H.; Liu, M.; Xiao, B.; Fu, J.; and
+Yuan, L. 2022. Tinyvit: Fast pretraining distillation for small
+vision transformers. In European Conference on Computer
+Vision, 68–85. Springer.
+Wu, Z.; Weng, Z.; Peng, W.; Yang, X.; Li, A.; Davis, L. S.;
+and Jiang, Y.-G. 2024. Building an open-vocabulary video
+CLIP model with better architectures, optimization and data.
+IEEE Transactions on Pattern Analysis and Machine Intelligence, 46(7): 4747–4762.
+Xuan, H.; Stylianou, A.; Liu, X.; and Pless, R. 2020. Hard
+negative examples are hard, but useful. In European Conference on Computer Vision, 126–142.
+Young, P.; Lai, A.; Hodosh, M.; and Hockenmaier, J. 2014.
+From image descriptions to visual denotations: New similarity metrics for semantic inference over event descriptions.
+Transactions of the Association for Computational Linguistics, 2: 67–78.
+Yu, B.; Liu, T.; Gong, M.; Ding, C.; and Tao, D. 2018. Correcting the triplet selection bias for triplet loss. In European
+Conference on Computer Vision, 71–87.
+Zhang, H.; Zhang, L.; Zhang, K.; and Mao, Z. 2024a. Identification of Necessary Semantic Undertakers in the Causal
+View for Image-Text Matching. In AAAI Conference on Artificial Intelligence, volume 38, 7105–7114.
+Zhang, K.; Mao, Z.; Wang, Q.; and Zhang, Y. 2022.
+Negative-aware attention framework for image-text matching. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, 15661–15670.
+Zhang, K.; Zhang, L.; Hu, B.; Zhu, M.; and Mao, Z. 2023.
+Unlocking the Power of Cross-Dimensional Semantic Dependency for Image-Text Matching. In ACM International
+Conference on Multimedia, 4828–4837.
+Zhang, Y.; Ji, Z.; Wang, D.; Pang, Y.; and Li, X. 2024b.
+USER: Unified semantic enhancement with momentum contrast for image-text retrieval. IEEE Transactions on Image
+Processing.
+Zhu, H.; Zhang, C.; Wei, Y.; Huang, S.; and Zhao, Y. 2023.
+Esa: External space attention aggregation for image-text retrieval. IEEE Transactions on Circuits and Systems for Video
+Technology, 33(10): 6131–6143.
+
+10895
+
+
